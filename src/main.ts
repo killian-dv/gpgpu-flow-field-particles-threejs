@@ -163,10 +163,16 @@ gpgpu.computation.setVariableDependencies(gpgpu.particlesVariable, [
 
 // uniforms
 gpgpu.particlesVariable.material.uniforms.uTime = new THREE.Uniform(0);
-gpgpu.particlesVariable.material.uniforms.deltaTime = new THREE.Uniform(0);
+gpgpu.particlesVariable.material.uniforms.uDeltaTime = new THREE.Uniform(0);
 gpgpu.particlesVariable.material.uniforms.uBase = new THREE.Uniform(
   baseParticlesTexture,
 );
+gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence =
+  new THREE.Uniform(0);
+gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength =
+  new THREE.Uniform(2);
+gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency =
+  new THREE.Uniform(0.5);
 
 // init
 gpgpu.computation.init();
@@ -180,6 +186,7 @@ gpgpu.debug = new THREE.Mesh(
   }),
 );
 gpgpu.debug.position.x = 3;
+gpgpu.debug.visible = false;
 scene.add(gpgpu.debug);
 
 /**
@@ -238,7 +245,7 @@ particles.material = new THREE.ShaderMaterial({
         sizes.height * sizes.pixelRatio,
       ),
     ),
-    uParticlesTexture: new THREE.Uniform(),
+    uParticlesTexture: new THREE.Uniform(new THREE.Texture()),
   },
 });
 
@@ -259,6 +266,26 @@ gui
   .step(0.001)
   .name("uSize");
 
+gui
+  .add(gpgpu.particlesVariable.material.uniforms.uFlowFieldInfluence, "value")
+  .min(0)
+  .max(1)
+  .step(0.001)
+  .name("uFlowFieldInfluence");
+
+gui
+  .add(gpgpu.particlesVariable.material.uniforms.uFlowFieldStrength, "value")
+  .min(0)
+  .max(10)
+  .name("uFlowFieldStrength");
+
+gui
+  .add(gpgpu.particlesVariable.material.uniforms.uFlowFieldFrequency, "value")
+  .min(0)
+  .max(1)
+  .step(0.001)
+  .name("uFlowFieldFrequency");
+
 /**
  * Animate
  */
@@ -275,7 +302,7 @@ const tick = () => {
 
   // Update GPGPU time
   gpgpu.particlesVariable.material.uniforms.uTime.value = elapsedTime;
-  gpgpu.particlesVariable.material.uniforms.deltaTime.value = deltaTime;
+  gpgpu.particlesVariable.material.uniforms.uDeltaTime.value = deltaTime;
 
   // Update GPGPU
   gpgpu.computation.compute();
