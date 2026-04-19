@@ -3,6 +3,11 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import {
+  GPUComputationRenderer,
+  type Variable,
+} from "three/addons/misc/GPUComputationRenderer.js";
+import gpgpuParticlesShader from "./shaders/gpgpu/particles.glsl";
 import particlesFragmentShader from "./shaders/particles/fragment.glsl";
 import particlesVertexShader from "./shaders/particles/vertex.glsl";
 import "./style.css";
@@ -92,16 +97,83 @@ renderer.setPixelRatio(sizes.pixelRatio);
 renderer.setClearColor(debugObject.clearColor);
 
 /**
+ * Base geometry
+ */
+const baseGeometry = {} as {
+  instance: THREE.SphereGeometry;
+  count: number;
+};
+baseGeometry.instance = new THREE.SphereGeometry(3);
+baseGeometry.count = baseGeometry.instance.attributes.position.count;
+
+/**
+ * GPU Compute
+ */
+// setup
+const gpgpu = {} as {
+  size: number;
+  computation: GPUComputationRenderer;
+  particlesVariable: Variable;
+  debug: THREE.Mesh;
+};
+gpgpu.size = Math.ceil(Math.sqrt(baseGeometry.count));
+gpgpu.computation = new GPUComputationRenderer(
+  gpgpu.size,
+  gpgpu.size,
+  renderer,
+);
+
+// base particles
+const baseParticlesTexture = gpgpu.computation.createTexture();
+
+for (let i = 0; i < baseGeometry.count; i++) {
+  const i3 = i * 3;
+  const i4 = i * 4;
+
+  if (!baseParticlesTexture.image.data) {
+    throw new Error("Base particles texture image data not found");
+  }
+
+  baseParticlesTexture.image.data[i4 + 0] =
+    baseGeometry.instance.attributes.position.array[i3 + 0];
+  baseParticlesTexture.image.data[i4 + 1] =
+    baseGeometry.instance.attributes.position.array[i3 + 1];
+  baseParticlesTexture.image.data[i4 + 2] =
+    baseGeometry.instance.attributes.position.array[i3 + 2];
+  baseParticlesTexture.image.data[i4 + 3] = 0;
+}
+
+// particles variable
+gpgpu.particlesVariable = gpgpu.computation.addVariable(
+  "uParticles",
+  gpgpuParticlesShader,
+  baseParticlesTexture,
+);
+gpgpu.computation.setVariableDependencies(gpgpu.particlesVariable, [
+  gpgpu.particlesVariable,
+]);
+
+// init
+gpgpu.computation.init();
+
+// debug
+gpgpu.debug = new THREE.Mesh(
+  new THREE.PlaneGeometry(3, 3),
+  new THREE.MeshBasicMaterial({
+    map: gpgpu.computation.getCurrentRenderTarget(gpgpu.particlesVariable)
+      .texture,
+  }),
+);
+gpgpu.debug.position.x = 3;
+scene.add(gpgpu.debug);
+
+/**
  * Particles
  */
 const particles = {} as {
-  geometry: THREE.SphereGeometry;
   material: THREE.ShaderMaterial;
   points: THREE.Points;
 };
-
-// Geometry
-particles.geometry = new THREE.SphereGeometry(3);
 
 // Material
 particles.material = new THREE.ShaderMaterial({
@@ -119,7 +191,7 @@ particles.material = new THREE.ShaderMaterial({
 });
 
 // Points
-particles.points = new THREE.Points(particles.geometry, particles.material);
+particles.points = new THREE.Points(baseGeometry.instance, particles.material);
 scene.add(particles.points);
 
 /**
@@ -148,6 +220,9 @@ const tick = () => {
 
   // Update controls
   controls.update();
+
+  // Update GPGPU
+  gpgpu.computation.compute();
 
   // Render normal scene
   renderer.render(scene, camera);
